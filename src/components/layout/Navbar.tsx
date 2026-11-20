@@ -1,24 +1,26 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { Menu, LogOut, Shield, Compass, Mail, Home, LayoutDashboard, User, Music } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { Menu, Shield, Compass, Mail, Home, LayoutDashboard, Music } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ThemeToggle } from "@/components/shared/ThemeToggle";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { NAV_ITEMS } from "@/lib/constants";
-import { toast } from "sonner";
-import { motion, AnimatePresence } from "framer-motion";
+import {
+  Show,
+  SignInButton,
+  SignUpButton,
+  UserButton,
+  useUser,
+} from "@clerk/nextjs";
 
 export function Navbar() {
   const pathname = usePathname();
-  const router = useRouter();
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [userProfile, setUserProfile] = useState<{ name?: string; avatar?: string } | null>(null);
+  const { isSignedIn, user } = useUser();
 
   // Monitor scroll for glass effect
   useEffect(() => {
@@ -28,50 +30,6 @@ export function Navbar() {
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
-
-  // Simple client-side auth state update from cookie check
-  const checkAuth = async () => {
-    const cookies = document.cookie.split(";");
-    const hasToken = cookies.some((item) => item.trim().startsWith("session_token="));
-    setIsAuthenticated(hasToken);
-
-    if (hasToken) {
-      try {
-        const res = await fetch("/api/auth/profile");
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success && data.user) {
-            setUserProfile({
-              name: data.user.name || "User",
-              avatar: data.user.avatar || "",
-            });
-          }
-        }
-      } catch (err) {
-        console.error("Failed fetching profile state for header:", err);
-      }
-    } else {
-      setUserProfile(null);
-    }
-  };
-
-  useEffect(() => {
-    checkAuth();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathname]);
-
-  const handleLogout = async () => {
-    try {
-      const res = await fetch("/api/auth/logout", { method: "POST" });
-      if (res.ok) {
-        toast.success("Successfully logged out");
-        router.push("/");
-        router.refresh();
-      }
-    } catch (err) {
-      toast.error("Logout failed. Please try again.");
-    }
-  };
 
   // Get icon for navbar item
   const getNavIcon = (label: string) => {
@@ -115,7 +73,7 @@ export function Navbar() {
           <nav className="hidden md:flex space-x-1">
             {NAV_ITEMS.map((item) => {
               // Hide protected links if not authenticated
-              if (item.protected && !isAuthenticated) return null;
+              if (item.protected && !isSignedIn) return null;
 
               const active = pathname === item.href;
 
@@ -140,25 +98,25 @@ export function Navbar() {
           <div className="hidden md:flex items-center space-x-4">
             <ThemeToggle />
 
-            {isAuthenticated ? (
-              <div className="flex items-center space-x-3">
-                <Avatar className="h-9 w-9 border border-primary/20">
-                  <AvatarImage src={userProfile?.avatar} alt={userProfile?.name} />
-                  <AvatarFallback className="bg-primary/10 text-primary">
-                    {userProfile?.name ? userProfile.name.substring(0, 2).toUpperCase() : <User className="h-4 w-4" />}
-                  </AvatarFallback>
-                </Avatar>
-                <Button variant="ghost" size="icon" onClick={handleLogout} className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl" title="Logout">
-                  <LogOut className="h-5 w-5" />
-                </Button>
-              </div>
-            ) : (
-              <Link href="/auth/login">
-                <Button className="rounded-xl font-semibold shadow-sm hover:scale-[1.02] transition-transform">
-                  Login / Register
-                </Button>
-              </Link>
-            )}
+            <Suspense fallback={null}>
+              <Show when="signed-in">
+                <UserButton />
+              </Show>
+              <Show when="signed-out">
+                <div className="flex items-center space-x-2">
+                  <SignInButton mode="modal">
+                    <Button variant="ghost" className="rounded-xl">
+                      Sign In
+                    </Button>
+                  </SignInButton>
+                  <SignUpButton mode="modal">
+                    <Button className="rounded-xl font-semibold shadow-sm hover:scale-[1.02] transition-transform">
+                      Sign Up
+                    </Button>
+                  </SignUpButton>
+                </div>
+              </Show>
+            </Suspense>
           </div>
 
           {/* Mobile hamburger menu */}
@@ -184,7 +142,7 @@ export function Navbar() {
                   </SheetHeader>
                   <nav className="flex flex-col space-y-2">
                     {NAV_ITEMS.map((item) => {
-                      if (item.protected && !isAuthenticated) return null;
+                      if (item.protected && !isSignedIn) return null;
                       const active = pathname === item.href;
                       return (
                         <Link
@@ -206,29 +164,40 @@ export function Navbar() {
                 </div>
 
                 <div className="border-t pt-4">
-                  {isAuthenticated ? (
-                    <div className="flex items-center justify-between">
+                  <Suspense fallback={null}>
+                    <Show when="signed-in">
                       <div className="flex items-center space-x-3">
-                        <Avatar className="h-10 w-10">
-                          <AvatarImage src={userProfile?.avatar} />
-                          <AvatarFallback className="bg-primary/10 text-primary">
-                            {userProfile?.name ? userProfile.name.substring(0, 2).toUpperCase() : <User className="h-5 w-5" />}
-                          </AvatarFallback>
-                        </Avatar>
+                        <UserButton />
                         <div className="text-left">
-                          <p className="text-sm font-semibold truncate max-w-[120px]">{userProfile?.name}</p>
-                          <p className="text-xs text-muted-foreground">Authenticated</p>
+                          <p className="text-sm font-semibold truncate max-w-[140px]">
+                            {user?.fullName || user?.primaryEmailAddress?.emailAddress || "Account"}
+                          </p>
+                          <p className="text-xs text-muted-foreground">Signed In</p>
                         </div>
                       </div>
-                      <Button variant="ghost" size="icon" onClick={() => { setIsMobileOpen(false); handleLogout(); }} className="text-destructive hover:bg-destructive/10 rounded-xl">
-                        <LogOut className="h-5 w-5" />
-                      </Button>
-                    </div>
-                  ) : (
-                    <Link href="/auth/login" onClick={() => setIsMobileOpen(false)}>
-                      <Button className="w-full rounded-xl font-semibold">Login / Register</Button>
-                    </Link>
-                  )}
+                    </Show>
+                    <Show when="signed-out">
+                      <div className="flex flex-col space-y-2">
+                        <SignInButton mode="modal">
+                          <Button
+                            variant="outline"
+                            className="w-full rounded-xl"
+                            onClick={() => setIsMobileOpen(false)}
+                          >
+                            Sign In
+                          </Button>
+                        </SignInButton>
+                        <SignUpButton mode="modal">
+                          <Button
+                            className="w-full rounded-xl font-semibold"
+                            onClick={() => setIsMobileOpen(false)}
+                          >
+                            Sign Up
+                          </Button>
+                        </SignUpButton>
+                      </div>
+                    </Show>
+                  </Suspense>
                 </div>
               </SheetContent>
             </Sheet>
